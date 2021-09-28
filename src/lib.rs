@@ -12,10 +12,28 @@ pub enum GameState {
     // DeadPosition
 }
 
+enum ColorState {
+    White,
+    Black
+}
+
+enum SpecialMoves {
+    Passante,
+    Casteling
+}
+enum Castling {
+    BlackKing,
+    BlackQueen,
+    WhiteKing,
+    WhiteQueen
+}
+
 // 
 pub struct Game {
     board: Vec<u8>,
     state: GameState,
+    turn: ColorState,
+    castling: Vec<Castling>,
 }
 
 impl Game {
@@ -24,6 +42,8 @@ impl Game {
         let mut game = Game {
             board: Vec::new(),
             state: GameState::InProgress,
+            turn: ColorState::White,
+            castling: vec![Castling::WhiteKing, Castling::WhiteQueen, Castling::BlackKing, Castling::BlackQueen],
         };
         game.apply_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         game
@@ -34,6 +54,8 @@ impl Game {
         let mut game = Game {
             board: Vec::new(),
             state: GameState::InProgress,
+            turn: ColorState::White,
+            castling: vec![Castling::WhiteKing, Castling::WhiteQueen, Castling::BlackKing, Castling::BlackQueen],
         };
         game.apply_fen(fen);
         game
@@ -76,6 +98,11 @@ impl Game {
 
         // Get turn
         // (fen_checker[1])
+        match fen_checker[1].as_str() {
+            "w" => self.turn = ColorState::White,
+            "b" => self.turn = ColorState::Black,
+            _ => { },  
+        }
 
         // Get castling availability
         // (fen_checker[2])
@@ -88,6 +115,84 @@ impl Game {
         
         // Fullmove number
         // (fen_checker[5])
+    }
+    
+    fn to_fen(&self) -> String {
+        let mut fen = String::from("");
+        let mut position: u8 = 0;
+        while position < 64 {
+            let mut next_position: u8 = 1;
+            if position % 8 == 0 && position != 0 {
+                fen.push('/');
+            }
+            match &self.board[position as usize] {
+                0b0001_0001 => fen.push('K'),
+                0b0000_1001 => fen.push('k'),
+                0b0001_0110 => fen.push('Q'),
+                0b0000_1110 => fen.push('q'),
+                0b0001_0101 => fen.push('B'),
+                0b0000_1101 => fen.push('b'),
+                0b0001_0100 => fen.push('N'),
+                0b0000_1100 => fen.push('n'),
+                0b0001_0011 => fen.push('R'),
+                0b0000_1011 => fen.push('r'),
+                0b0001_0010 => fen.push('P'),
+                0b0000_1010 => fen.push('p'),
+                _ => {
+                    let mut x: u8 = 0;
+                    while (position % 8) + x < 8 && position + x < 64 { 
+                        if self.board[(position + x) as usize] == 0b0000_0000 as u8 {
+                            x += 1;
+                        } else if position % 8 == 0 { 
+                            break; 
+                        } else {
+                            break;
+                        }   
+                    }
+                    next_position = x;
+                    fen.push(match x {
+                        1 => '1',
+                        2 => '2',
+                        3 => '3',
+                        4 => '4',
+                        5 => '5',
+                        6 => '6',
+                        7 => '7',
+                        8 => '8',
+                        _ => '0',
+                    });
+                },
+            }
+            position += next_position;
+        }
+        fen.push(' ');
+
+        match self.turn {
+            ColorState::White => fen.push('w'),
+            ColorState::Black => fen.push('b'),
+        }
+        fen.push(' ');
+
+        for index in &self.castling {
+            match index {
+                Castling::WhiteKing => fen.push('K'),
+                Castling::WhiteQueen => fen.push('Q'),
+                Castling::BlackKing => fen.push('k'),
+                Castling::BlackQueen => fen.push('q'),
+                _ => fen.push('-'),
+            }
+        }
+        fen.push(' ');
+
+        fen
+    }
+
+    // Function to move pieces
+    pub fn move_piece(&self, current_tile: String, new_tile: String) {
+        let moves = match self.get_valid_moves(current_tile.as_str()) {
+            Some(vector) => { vector },
+            None => { Vec::new() },
+        };
     }
 
     // Function to get vector index as a grid position
@@ -166,7 +271,34 @@ impl Game {
         // Return possible moves
         return match selected_piece {
             // King piece
-            0b0001_0001 | 0b0000_1001 => Some(self.get_surrounding_tiles(y * 8 + x, true, true, false)),
+            0b0001_0001 | 0b0000_1001 => {
+                let mut index = 0;
+                let mut threatned_tiles: Vec<Vec<u8>> = Vec::new();
+                for piece in &self.board {
+                    if piece >> 3 ^ selected_piece >> 3 != 0b0000_0000 && piece << 5 == 0b0010_0000 {
+                        threatned_tiles.push(self.get_surrounding_tiles((index as u8).into(), true, true, false));
+                    }   
+                    else if piece >> 3 ^ selected_piece >> 3 != 0b0000_0000 {
+                        match self.get_valid_moves(&Game::vector_to_grid(index)) {
+                            Some(vector) => threatned_tiles.push(vector),
+                            None => { },
+                        }
+                    }
+                    index += 1;
+                }
+                let threatned_moves: Vec<u8> = threatned_tiles.into_iter().flatten().collect();
+                let mut allowed_moves: Vec<u8> = Vec::new();
+
+                for tile in self.get_surrounding_tiles(y * 8 + x, true, true, false) {
+                    if !threatned_moves.contains(&tile) {
+                        
+                        allowed_moves.push(tile);
+                        println!("{}", Game::vector_to_grid(tile));
+                    }
+                }
+
+                Some(allowed_moves)
+            },
             // Queen piece
             0b0001_0110 | 0b0000_1110 => Some(self.get_surrounding_tiles(y * 8 + x, true, true, true)),
             // Bishop piece
@@ -237,7 +369,7 @@ impl Game {
                 // EAST
                 2 => {
                     for continous_loop in 1..8 {
-                        if index + (1 * continous_loop) < 644 && &self.board[index + (1 * continous_loop)] >> 3 | &self.board[index] >> 3 == 0b0000_0011 && ((index % 8) + 1 * continous_loop) < 8 {
+                        if index + (1 * continous_loop) < 64 && &self.board[index + (1 * continous_loop)] >> 3 | &self.board[index] >> 3 == 0b0000_0011 && ((index % 8) + 1 * continous_loop) < 8 {
                             available_tiles.push((index + (1 * continous_loop) as usize) as u8);
                             break;
                         } else if index + (1 * continous_loop) < 64 && &self.board[index + (1 * continous_loop)] >> 3 ^ &self.board[index] >> 3 != 0b0000_0000 && ((index % 8) + 1 * continous_loop) < 8 {
@@ -342,34 +474,67 @@ impl Game {
         }
         available_tiles
     }
-
+    
     fn get_knight_moves(&self, index: usize) -> Vec<u8> {
         let mut tile_check = 0;
         let mut available_moves: Vec<u8> = Vec::new();
-        while(tile_check < 8) {
+        while tile_check < 8 {
             match tile_check {
                 // Up, Left
-                0 => {},
+                0 => {
+                    if index as isize - 16 - 1 >= 0 && &self.board[index - 16 - 1] >> 3 ^ &self.board[index] >> 3 != 0b0000_0000 && (index % 8) - 1 >= 0 {
+                        available_moves.push(index as u8 - 16 - 1);
+                    }
+                },
                 // Up, Right
-                1 => {},
+                1 => {
+                    if index as isize - 16 + 1 >= 0 && &self.board[index - 16 + 1] >> 3 ^ &self.board[index] >> 3 != 0b0000_0000 && (index % 8) + 1 < 8 {
+                        available_moves.push(index as u8 - 16 - 1);
+                    }
+                },
                 // Right, Up
-                2 => {},
+                2 => {
+                    if index as isize - 8 + 2 >= 0 && &self.board[index - 8 + 2] >> 3 ^ &self.board[index] >> 3 != 0b0000_0000 && (index % 8) + 2 < 8 {
+                        available_moves.push(index as u8 - 8 + 2);
+                    }
+                },
                 // Right, Down
-                3 => {},
+                3 => {
+                    if index as isize - 8 - 2 >= 0 && &self.board[index - 8 - 2] >> 3 ^ &self.board[index] >> 3 != 0b0000_0000 && (index % 8) - 2 < 8 {
+                        available_moves.push(index as u8 - 8 - 2);
+                    }
+                },
                 // Down, Left
-                4 => {},
+                4 => {
+                    if index + 16 - 1 < 64 && &self.board[index + 16 - 1] >> 3 ^ &self.board[index] >> 3 != 0b0000_0000 && (index % 8) - 1 >= 0 {
+                        available_moves.push(index as u8 + 16 - 1);
+                    }
+                },
                 // Down, Right
-                5 => {},
+                5 => {
+                    if index + 16 + 1 < 64 && &self.board[index + 16 + 1] >> 3 ^ &self.board[index] >> 3 != 0b0000_0000 && (index % 8) + 1 < 8 {
+                        available_moves.push(index as u8 + 16 + 1);
+                    }
+                },
                 // Left, Up
-                6 => {},
+                6 => {
+                    if index - 8 - 2 >= 0 && &self.board[index - 8 - 2] >> 3 ^ &self.board[index] >> 3 != 0b0000_0000 && (index % 8) - 2 >= 0 {
+                        available_moves.push(index as u8 - 8 - 2);
+                    }
+                },
                 // Left, Down
-                7 => {},
+                7 => {
+                    if index + 8 - 2 < 64 && &self.board[index + 8 - 2] >> 3 ^ &self.board[index] >> 3 != 0b0000_0000 && (index % 8) - 2 >= 0 {
+                        available_moves.push(index as u8 + 8 - 2);
+                    }
+                },
                 // (?)
                 _ => {},
             }   
 
             tile_check += 1;
         }
+        available_moves
     }
 
     // Get possible pawn moves
@@ -457,7 +622,9 @@ mod tests {
 
     #[test]
     fn validator_test() {
-        let a = Game::new_board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let a = Game::new_board("4k3/3Q3R/8/8/8/8/8/8 w KQkq - 0 1");
         a.display_board();
+        a.get_valid_moves("A5");
+        println!("{}", a.to_fen().as_str());
     }   
 } 
