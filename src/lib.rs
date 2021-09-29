@@ -59,7 +59,12 @@ impl Game {
         };
         game.apply_fen(fen);
         game
-    } 
+    }
+
+    // Return current GameState
+    pub fn get_state(&self) -> GameState {
+        self.state
+    }
 
     // Take in fen string and apply the board state to the game
     fn apply_fen(&mut self, fen: &str) {
@@ -106,7 +111,6 @@ impl Game {
 
         // Get castling availability
         // (fen_checker[2])
-
         // Get en passent availability
         // (fen_checker[3])
 
@@ -117,6 +121,7 @@ impl Game {
         // (fen_checker[5])
     }
     
+    // Get current board as fen string
     fn to_fen(&self) -> String {
         let mut fen = String::from("");
         let mut position: u8 = 0;
@@ -187,12 +192,79 @@ impl Game {
         fen
     }
 
-    // Function to move pieces
-    pub fn move_piece(&self, current_tile: String, new_tile: String) {
-        let moves = match self.get_valid_moves(current_tile.as_str()) {
-            Some(vector) => { vector },
-            None => { Vec::new() },
-        };
+    // Function to move pieces 
+    pub fn move_piece(&mut self, current_tile: &str, new_tile: &str) {
+        match self.turn {
+            // Only move white pieces if it is white's turn
+            ColorState::White => {
+                if &self.board[Game::grid_to_vector(&current_tile) as usize] >> 3 == 0b0000_0010 {
+                    let moves = match self.get_valid_moves(current_tile) {
+                        Some(vector) => { vector },
+                        None => { Vec::new() },
+                    };
+
+                    if moves.contains(&Game::grid_to_vector(&new_tile)) {
+                        self.board[Game::grid_to_vector(&new_tile) as usize] = self.board[Game::grid_to_vector(&current_tile) as usize];
+                        self.board[Game::grid_to_vector(&current_tile) as usize] = 0b0000_0000 as u8;
+                        // Make next turn black
+                        self.turn = ColorState::Black;
+                    }
+                }   
+            },
+            // Only move black pieces if it is white's turn
+            ColorState::Black => {
+                if &self.board[Game::grid_to_vector(&current_tile) as usize] >> 3 == 0b0000_0001 {
+                    let moves = match self.get_valid_moves(current_tile) {
+                        Some(vector) => { vector },
+                        None => { Vec::new() },
+                    };
+
+                    if moves.contains(&Game::grid_to_vector(&new_tile)) {
+                        self.board[Game::grid_to_vector(&new_tile) as usize] = self.board[Game::grid_to_vector(&current_tile) as usize];
+                        self.board[Game::grid_to_vector(&current_tile) as usize] = 0b0000_0000 as u8;
+                        // Make next turn white
+                        self.turn = ColorState::White;
+                    }
+                }
+            },
+        }
+    }
+
+    // Get grid position into vector index
+    fn grid_to_vector(tile: &str) -> u8 {
+        let mut x: usize = 0;
+        let mut y: usize = 0;
+
+        for index in tile.chars() {
+            match index {
+                // Y-coordinate
+                'A' => {y = 0},
+                'B' => {y = 1},
+                'C' => {y = 2},
+                'D' => {y = 3},
+                'E' => {y = 4},
+                'F' => {y = 5},
+                'G' => {y = 6},
+                'H' => {y = 7},
+            
+                // X-coordinate
+                '1' => {x = 0},
+                '2' => {x = 1},
+                '3' => {x = 2},
+                '4' => {x = 3},
+                '5' => {x = 4},
+                '6' => {x = 5},
+                '7' => {x = 6},
+                '8' => {x = 7},
+                
+                // No valid input
+                _ => {
+                    y = 0;
+                    x = 0;
+                },
+            }
+        }
+        ((y * 8) + x) as u8
     }
 
     // Function to get vector index as a grid position
@@ -210,7 +282,7 @@ impl Game {
             5 => "F",
             6 => "G",
             7 => "H",
-            _ => " ",
+            _ => "A",
         }.to_owned();
         
         // Get column as number
@@ -223,7 +295,7 @@ impl Game {
             5 => "6",
             6 => "7",
             7 => "8",
-            _ => " ",
+            _ => "1",
         };
 
         // Add column to row string
@@ -267,7 +339,6 @@ impl Game {
         }
 
         let selected_piece = &self.board[(y * 8) + x];
-        let mut possible_moves: Vec<u8> = Vec::new();
         // Return possible moves
         return match selected_piece {
             // King piece
@@ -304,7 +375,7 @@ impl Game {
             // Bishop piece
             0b0001_0101 | 0b0000_1101 => Some(self.get_surrounding_tiles(y * 8 + x, true, false, true)),   
             // Knight piece
-            0b0001_0100 | 0b0000_1100 => None,
+            0b0001_0100 | 0b0000_1100 => Some(self.get_knight_moves(y * 8 + x)),
             // Rook piece
             0b0001_0011 | 0b0000_1011 => Some(self.get_surrounding_tiles(y * 8 + x, false, true, true)),
             // Pawn piece
@@ -566,14 +637,13 @@ impl Game {
 
     // Print out the curent board and pieces
     fn display_board(&self) {
-        let current_board = &self.board;
         let mut column = 8;
-        print!("   ");
+        print!("\n\n   ");
         for index in 0..8 {
             print!("{} ", index + 1);
         }
         let mut row = 0;
-        for index in current_board {
+        for index in &self.board {
             if column == 8 {
                 row = row + 1;
                 column = 0;
@@ -621,10 +691,17 @@ mod tests {
     }
 
     #[test]
-    fn validator_test() {
-        let a = Game::new_board("4k3/3Q3R/8/8/8/8/8/8 w KQkq - 0 1");
-        a.display_board();
-        a.get_valid_moves("A5");
-        println!("{}", a.to_fen().as_str());
+    fn test_display() {
+        let a = Game::new();
+        // a.display_board();
     }   
-} 
+    
+    #[test]
+    fn test_move() {
+        let mut a = Game::new_board("4k3/3Q3R/8/8/8/8/8/8 b KQkq - 0 1");
+        a.display_board();
+        a.move_piece("A5", "A4");
+        a.display_board();
+        println!("{}", a.to_fen());
+    }
+}  
