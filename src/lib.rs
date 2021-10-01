@@ -192,8 +192,8 @@ impl Game {
         fen.push(' ');
 
         match self.turn {
-            TurnState::White => fen.push('w'),
-            TurnState::Black => fen.push('b'),
+            ColorState::White => fen.push('w'),
+            ColorState::Black => fen.push('b'),
         }
         fen.push(' ');
 
@@ -275,42 +275,6 @@ impl Game {
         self.enpassant = "-".to_string();
     }
     
-    fn check_checkstate(&mut self) {
-        let mut index = 0;
-        let mut threatned_tiles: Vec<Vec<u8>> = Vec::new();
-        let selected_king = match self.turn {
-            TurnState::White => 0b0001_0001,
-            TurnState::Black => 0b0000_1001,
-        }
-        for piece in &self.board {
-        // Get opposite color king piece possible moves
-        if piece >> 3 ^ selected_king >> 3 != 0b0000_0000 && piece << 5 == 0b0010_0000 {
-            threatned_tiles.push(self.get_surrounding_tiles(
-                (index as u8).into(),
-                true,
-                true,
-                false,
-                ));
-            }
-            // Get all opposite color pieces possible moves
-            else if piece >> 3 ^ selected_king >> 3 != 0b0000_0000 {
-                match self.get_valid_moves(&Game::vector_to_grid(index)) {
-                    Some(vector) => threatned_tiles.push(vector),
-                    None => {}
-                }
-            }
-            index += 1;
-        }
-        let threatned_moves: Vec<u8> = threatned_tiles.into_iter().flatten().collect();
-        let mut allowed_moves: Vec<u8> = Vec::new();
-
-        // Only allow piece to move into non-threatned tiles
-        for tile in self.get_surrounding_tiles(position, true, true, false) {
-            if !threatned_moves.contains(&tile) {
-                allowed_moves.push(tile);
-            }
-        }
-    }
 
     pub fn set_promotion(&mut self, piece: char) {
         self.promotion = match piece {
@@ -383,7 +347,7 @@ impl Game {
             },
             _ => self.board[position],
         };
-
+        
         // Return possible moves
         return match selected_piece {
             // King piece
